@@ -3,7 +3,7 @@ import { detectErrorType, ErrorType } from '@/utils/detectErrorType'
 import { buildPrompt } from '@/utils/buildPrompt'
 
 const API_KEY = process.env.OPENAI_API_KEY
-const API_URL = 'https://api.z.ai/api/anthropic'
+const API_URL = 'https://api.z.ai/api/anthropic/v1/messages'
 
 // Set to true to use mock responses for testing without API credits
 const USE_MOCK = process.env.USE_MOCK === 'true'
@@ -51,22 +51,7 @@ function parseAIResponse(text: string): AIResponse | null {
 }
 
 function buildUserPrompt(error: string, type: ErrorType): string {
-  return `Explain this ${type} error:
-
-${error}
-
-Return JSON in this exact format:
-{
-  "explanation": "string (1 sentence)",
-  "causes": ["string", "string", "string"],
-  "fixes": ["string", "string", "string"]
-}
-
-Rules:
-* Max 3 causes
-* Max 3 fixes
-* Be specific
-* No generic advice`
+  return buildPrompt(error, type)
 }
 
 function createFallbackResponse(): ErrorAnalysis {
@@ -162,14 +147,15 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${API_KEY}`,
         'Accept-Language': 'en-US,en',
         'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
         model: 'glm-4.7',
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.3,
       }),
     })
 
@@ -193,19 +179,10 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json()
-    console.log('GLM API response:', JSON.stringify(data, null, 2))
+    console.log('Claude API response:', JSON.stringify(data, null, 2))
 
-    // Handle different response formats
-    let aiMessage = data.choices?.[0]?.message?.content
-    if (!aiMessage) {
-      aiMessage = data.data?.choices?.[0]?.message?.content
-    }
-    if (!aiMessage) {
-      aiMessage = data.choices?.[0]?.delta?.content
-    }
-    if (!aiMessage) {
-      aiMessage = data.message?.content
-    }
+    // Handle Claude API response format
+    let aiMessage = data.content?.[0]?.text
 
     if (!aiMessage) {
       console.error('No message in response, full data:', JSON.stringify(data))
