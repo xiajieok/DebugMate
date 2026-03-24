@@ -15,12 +15,17 @@ If possible, infer the likely real-world cause instead of giving generic explana
 Error:
 ${error}
 
-Return in this format:
+Return JSON in this exact format:
+{
+  "explanation": "string (1 sentence)",
+  "causes": ["string", "string", "string"],
+  "fixes": ["string", "string", "string"]
+}
 
-1. Explanation (1 sentence, simple English)
-2. Possible causes (max 3, specific)
-3. Fix suggestions (max 3, actionable, include code if helpful)
-
-Avoid generic advice.
-Be direct.`
+Rules:
+* Max 3 causes
+* Max 3 fixes
+* Be specific
+* No generic advice
+* Return valid JSON only`
 }
