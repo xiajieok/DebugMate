@@ -33,6 +33,7 @@ export default function Home() {
   const [streamingExplanation, setStreamingExplanation] = useState('')
   const [streamingCauses, setStreamingCauses] = useState<string[]>([])
   const [streamingFixes, setStreamingFixes] = useState<FixSuggestion[]>([])
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false)
 
   const handleSubmit = async () => {
     if (!error.trim()) return
@@ -44,6 +45,7 @@ export default function Home() {
     setStreamingExplanation('')
     setStreamingCauses([])
     setStreamingFixes([])
+    setFeedbackSubmitted(false)
 
     try {
       const response = await fetch('/api/explain', {
@@ -131,6 +133,30 @@ export default function Home() {
     }
   }
 
+  const handleFeedback = async (type: 'up' | 'down') => {
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type,
+          error: error || undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to submit feedback')
+      }
+
+      setFeedbackSubmitted(true)
+    } catch (err) {
+      console.error('Error submitting feedback:', err)
+    }
+  }
+
   const displayResult = result || (streamingExplanation && {
     explanation: streamingExplanation,
     possibleCauses: streamingCauses.filter(Boolean),
@@ -192,6 +218,8 @@ export default function Home() {
             explanation={displayResult.explanation}
             possibleCauses={displayResult.possibleCauses}
             fixSuggestions={displayResult.fixSuggestions}
+            onFeedback={handleFeedback}
+            feedbackSubmitted={feedbackSubmitted}
           />
         )}
       </main>
