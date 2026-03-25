@@ -16,8 +16,12 @@ interface ErrorAnalysis {
   fixSuggestions: FixSuggestion[]
 }
 
-interface APIError {
-  error: string
+interface StreamChunk {
+  type: 'explanation' | 'cause' | 'fix' | 'done' | 'error' | 'full-explanation'
+  data?: string | FixSuggestion
+  index?: number
+  error?: string
+  errorType?: string
 }
 
 export default function Home() {
@@ -26,6 +30,9 @@ export default function Home() {
   const [errorType, setErrorType] = useState<ErrorType | null>(null)
   const [result, setResult] = useState<ErrorAnalysis | null>(null)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [streamingExplanation, setStreamingExplanation] = useState('')
+  const [streamingCauses, setStreamingCauses] = useState<string[]>([])
+  const [streamingFixes, setStreamingFixes] = useState<FixSuggestion[]>([])
 
   const handleSubmit = async () => {
     if (!error.trim()) return
@@ -34,9 +41,11 @@ export default function Home() {
     setResult(null)
     setErrorType(null)
     setApiError(null)
+    setStreamingExplanation('')
+    setStreamingCauses([])
+    setStreamingFixes([])
 
     try {
-      // Call API endpoint
       const response = await fetch('/api/explain', {
         method: 'POST',
         headers: {
@@ -46,16 +55,73 @@ export default function Home() {
       })
 
       if (!response.ok) {
-        const errorData: APIError = await response.json()
+        const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to analyze error')
       }
 
-      const analysis: ErrorAnalysis = await response.json()
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('No response body')
+      }
 
-      // Set error type from response (or detect locally)
-      const detectedType: ErrorType = (analysis as any).errorType || 'General JavaScript'
-      setErrorType(detectedType)
-      setResult(analysis)
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            try {
+              const chunk: StreamChunk = JSON.parse(data)
+
+              switch (chunk.type) {
+                case 'explanation':
+                  setStreamingExplanation(prev => prev + (chunk.data as string))
+                  break
+                case 'full-explanation':
+                  setStreamingExplanation(chunk.data as string)
+                  break
+                case 'cause':
+                  setStreamingCauses(prev => {
+                    const newCauses = [...prev]
+                    if (chunk.index !== undefined) {
+                      newCauses[chunk.index] = chunk.data as string
+                    }
+                    return newCauses
+                  })
+                  break
+                case 'fix':
+                  setStreamingFixes(prev => {
+                    const newFixes = [...prev]
+                    if (chunk.index !== undefined) {
+                      newFixes[chunk.index] = chunk.data as FixSuggestion
+                    }
+                    return newFixes
+                  })
+                  break
+                case 'done':
+                  if (chunk.errorType) {
+                    setErrorType(chunk.errorType as ErrorType)
+                  }
+                  setLoading(false)
+                  break
+                case 'error':
+                  throw new Error(chunk.error)
+              }
+            } catch {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
       setApiError(message)
@@ -64,6 +130,12 @@ export default function Home() {
       setLoading(false)
     }
   }
+
+  const displayResult = result || (streamingExplanation && {
+    explanation: streamingExplanation,
+    possibleCauses: streamingCauses.filter(Boolean),
+    fixSuggestions: streamingFixes.filter(Boolean)
+  })
 
   return (
     <div className="min-h-screen">
@@ -99,7 +171,7 @@ export default function Home() {
         </div>
 
         {/* Loading State */}
-        {loading && (
+        {loading && !streamingExplanation && (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-[#6366F1] border-t-transparent mb-4" />
             <p className="text-[#9CA3AF]">Analyzing your error...</p>
@@ -114,12 +186,12 @@ export default function Home() {
         )}
 
         {/* Result Section */}
-        {result && !loading && errorType && (
+        {displayResult && errorType && (
           <ResultCard
             errorType={errorType}
-            explanation={result.explanation}
-            possibleCauses={result.possibleCauses}
-            fixSuggestions={result.fixSuggestions}
+            explanation={displayResult.explanation}
+            possibleCauses={displayResult.possibleCauses}
+            fixSuggestions={displayResult.fixSuggestions}
           />
         )}
       </main>
