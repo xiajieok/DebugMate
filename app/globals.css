@@ -1,14 +1,6 @@
-@import "tailwindcss";
-
-@theme inline {
-  --color-background: #0B0F14;
-  --color-card: #121821;
-  --color-border: #1F2A37;
-  --color-text-primary: #E5E7EB;
-  --color-text-secondary: #9CA3AF;
-  --color-primary: #6366F1;
-  --color-primary-hover: #4F46E5;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 body {
   background: #0B0F14;
